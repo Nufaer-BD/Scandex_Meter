@@ -1,0 +1,161 @@
+[
+    {
+        "id": "7f9c0e797910d790",
+        "type": "tab",
+        "label": "Flow 3",
+        "disabled": false,
+        "info": "",
+        "env": []
+    },
+    {
+        "id": "d0c88ab9bc1c87d6",
+        "type": "debug",
+        "z": "7f9c0e797910d790",
+        "name": "SEQ",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 610,
+        "y": 120,
+        "wires": []
+    },
+    {
+        "id": "d9bd73fd9043023f",
+        "type": "inject",
+        "z": "7f9c0e797910d790",
+        "name": "",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "topic",
+                "vt": "str"
+            }
+        ],
+        "repeat": "5",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "x": 130,
+        "y": 60,
+        "wires": [
+            [
+                "a6cacdfd8dafeb94"
+            ]
+        ]
+    },
+    {
+        "id": "a6cacdfd8dafeb94",
+        "type": "function",
+        "z": "7f9c0e797910d790",
+        "name": "Meter Info",
+        "func": "// Attempt to get existing jobs from the flow context\nlet jobs = flow.get(\"jobs\");\n\n// If jobs don't exist yet, generate them dynamically\nif (!jobs) {\n    // 1. Define your list of meters with metadata (ID, name, location, etc.)\n    const meters = [\n        { id: 1, name: \"meter_1\", location: \"B1 IT\" }\n    ]; \n    \n    // 2. Define the common register configuration for this specific meter model\n    const meterModelConfig = {\n        fc: 3,\n        address: 3203,\n        quantity: 4,\n        dataType: \"uint64\",\n        wordOrder: \"BE\",\n        scale: 1\n    };\n\n    // 3. Automatically map the meter objects to create the jobs array\n    jobs = meters.map(meter => {\n        return {\n            name: `${meter.name}_PowerMeter`,\n            unitid: meter.id,\n            meterName: meter.name,    // Added metadata\n            location: meter.location, // Added metadata\n            ...meterModelConfig\n        };\n    });\n\n    // Second model to push to the array\n    jobs.push({\n        name: \"PowerMeter\",\n        fc: 3,\n        unitid: 2,\n        meterName: \"IT DB\", // Added metadata\n        location: \"B1 2ndFloor\",      // Added metadata\n        address: 999,\n        quantity: 2,\n        dataType: \"float32\",\n        wordOrder: \"BE\",\n        scale: 1\n    });\n\n    // Save to flow context so we only calculate this array once\n    flow.set(\"jobs\", jobs);\n}\n\n// Get the current index (default to 0 on first run)\nlet i = flow.get(\"job_index\") || 0;\nlet job = jobs[i];\n\nmsg.job = job;\n\n// Prepare payload for the Modbus Flex Getter node\nmsg.topic = job.name;\nmsg.payload = {\n    fc: job.fc,\n    unitid: job.unitid,\n    address: job.address,\n    quantity: job.quantity\n};\n\n// Increment index for the next inject interval, wrap around to 0 when reaching the end\nflow.set(\"job_index\", (i + 1) % jobs.length);\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 280,
+        "y": 60,
+        "wires": [
+            [
+                "13a24649be0cc547"
+            ]
+        ]
+    },
+    {
+        "id": "13a24649be0cc547",
+        "type": "modbus-flex-getter",
+        "z": "7f9c0e797910d790",
+        "name": "Modbus Getter Waveshare",
+        "showStatusActivities": false,
+        "showErrors": true,
+        "showWarnings": true,
+        "logIOActivities": false,
+        "server": "178b05dcc49c6a3b",
+        "useIOFile": false,
+        "ioFile": "",
+        "useIOForPayload": false,
+        "emptyMsgOnFail": false,
+        "keepMsgProperties": true,
+        "delayOnStart": false,
+        "enableDeformedMessages": false,
+        "startDelayTime": "",
+        "x": 340,
+        "y": 120,
+        "wires": [
+            [
+                "03b948b8e62fad4d"
+            ],
+            []
+        ]
+    },
+    {
+        "id": "03b948b8e62fad4d",
+        "type": "function",
+        "z": "7f9c0e797910d790",
+        "name": "conversion",
+        "func": "// timestamp formatter\nfunction getTimestamp() {\n    let now = new Date();\n    let yyyy = now.getFullYear();\n    let mm = String(now.getMonth() + 1).padStart(2, '0');\n    let dd = String(now.getDate()).padStart(2, '0');\n    let hh = String(now.getHours()).padStart(2, '0');\n    let min = String(now.getMinutes()).padStart(2, '0');\n    let ss = String(now.getSeconds()).padStart(2, '0');\n    return `${yyyy}-${mm}-${dd} ${hh}:${min}:${ss}`;\n}\n\nfunction swapWords16(arr) {\n    if (!Array.isArray(arr) || arr.length < 2) return arr;\n    let out = [];\n    for (let i = 0; i < arr.length; i += 2) {\n        if (i + 1 < arr.length) {\n            out.push(arr[i + 1], arr[i]);\n        } else {\n            out.push(arr[i]);\n        }\n    }\n    return out;\n}\n\nfunction regsToBuffer(regs) {\n    const buf = Buffer.alloc(regs.length * 2);\n    for (let i = 0; i < regs.length; i++) {\n        buf.writeUInt16BE(regs[i] & 0xFFFF, i * 2);\n    }\n    return buf;\n}\n\nfunction toBigInt64FromRegs(regs, wordOrder) {\n    let r = regs.slice();\n    if (wordOrder === \"LE\") r = swapWords16(r);\n\n    let value = 0n;\n    for (let i = 0; i < r.length; i++) {\n        value = (value << 16n) | BigInt(r[i] & 0xFFFF);\n    }\n    return value;\n}\n\n// get saved job\n//let job = flow.get(\"current_job\") || {};\nlet job = msg.job || {};\nlet regs = [];\n\nif (msg.payload && Array.isArray(msg.payload.data)) {\n    regs = msg.payload.data;\n} else if (Array.isArray(msg.payload)) {\n    regs = msg.payload;\n} else {\n    node.warn(\"No register array found in msg.payload.data\");\n    return null;\n}\n\nlet dataType = (job.dataType || \"\").toLowerCase();\nlet wordOrder = job.wordOrder || \"BE\";\nlet scale = Number(job.scale || 1);\nlet value = null;\n\ntry {\n    if (dataType === \"float32\") {\n        let r = regs.slice(0, 2);\n        if (wordOrder === \"LE\") r = swapWords16(r);\n        let buf = regsToBuffer(r);\n        value = buf.readFloatBE(0) * scale;\n\n    } else if (dataType === \"uint32\") {\n        let r = regs.slice(0, 2);\n        if (wordOrder === \"LE\") r = swapWords16(r);\n        let buf = regsToBuffer(r);\n        value = buf.readUInt32BE(0) * scale;\n\n    } else if (dataType === \"int32\") {\n        let r = regs.slice(0, 2);\n        if (wordOrder === \"LE\") r = swapWords16(r);\n        let buf = regsToBuffer(r);\n        value = buf.readInt32BE(0) * scale;\n\n    } else if (dataType === \"uint64\") {\n        let r = regs.slice(0, 4);\n        let bigVal = toBigInt64FromRegs(r, wordOrder);\n        value = Number(bigVal) * scale;\n\n    } else if (dataType === \"uint16\") {\n        value = (regs[0] || 0) * scale;\n\n    } else if (dataType === \"int16\") {\n        let v = regs[0] || 0;\n        if (v > 32767) v = v - 65536;\n        value = v * scale;\n\n    } else if (dataType === \"float64\") {\n        let r = regs.slice(0, 4);\n        let buf = Buffer.alloc(8);\n        buf.writeUInt16BE(r[3], 0);\n        buf.writeUInt16BE(r[2], 2);\n        buf.writeUInt16BE(r[1], 4);\n        buf.writeUInt16BE(r[0], 6);\n        value = buf.readDoubleBE(0) * scale;\n\n    } else {\n        value = regs;\n    }\n\n    msg.payload = {\n        meter_id: job.meterName || null,\n        location: job.location || null,\n        dataout: value,\n        timestamp: getTimestamp()\n    };\n\n    return msg;\n\n} catch (err) {\n    node.error(\"Conversion failed: \" + err.message, msg);\n    return null;\n}",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 490,
+        "y": 60,
+        "wires": [
+            [
+                "d0c88ab9bc1c87d6"
+            ]
+        ]
+    },
+    {
+        "id": "178b05dcc49c6a3b",
+        "type": "modbus-client",
+        "name": "waveshare 16.77",
+        "clienttype": "tcp",
+        "bufferCommands": true,
+        "stateLogEnabled": false,
+        "queueLogEnabled": false,
+        "failureLogEnabled": true,
+        "tcpHost": "172.16.16.77",
+        "tcpPort": 502,
+        "tcpType": "DEFAULT",
+        "serialPort": "/dev/ttyUSB",
+        "serialType": "RTU-BUFFERD",
+        "serialBaudrate": 9600,
+        "serialDatabits": 8,
+        "serialStopbits": 1,
+        "serialParity": "none",
+        "serialConnectionDelay": 100,
+        "serialAsciiResponseStartDelimiter": "0x3A",
+        "unit_id": "",
+        "commandDelay": 1,
+        "clientTimeout": 1000,
+        "reconnectOnTimeout": true,
+        "reconnectTimeout": 2000,
+        "parallelUnitIdsAllowed": false,
+        "showErrors": false,
+        "showWarnings": true,
+        "showLogs": true
+    },
+    {
+        "id": "2a50635f33de8847",
+        "type": "global-config",
+        "env": [],
+        "modules": {
+            "node-red-contrib-modbus": "5.45.2"
+        }
+    }
+]
