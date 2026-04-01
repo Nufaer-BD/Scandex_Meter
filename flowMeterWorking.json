@@ -20,23 +20,23 @@
         "targetType": "msg",
         "statusVal": "",
         "statusType": "auto",
-        "x": 590,
-        "y": 60,
+        "x": 610,
+        "y": 120,
         "wires": []
     },
     {
         "id": "07a6ed2c76114130",
         "type": "function",
         "z": "e6422d68233f1d2d",
-        "name": "function: DATA SOURCE",
-        "func": "// Attempt to get existing jobs from the flow context\nlet jobs = flow.get(\"jobs\");\n\n// If jobs don't exist yet, generate them dynamically\nif (!jobs) {\n    // 1. Define your list of meters with metadata (ID, name, location, etc.)\n    const meters = [\n        { id: 1, name: \"meter_1\", location: \"B5 Shed\" },\n        { id: 2, name: \"meter_2\", location: \"B5 Shed\" }\n    ]; \n    \n    // 2. Define the common register configuration for this specific meter model\n    const meterModelConfig = {\n        fc: 3,\n        address: 144,\n        quantity: 4,\n        dataType: \"float64\",\n        wordOrder: \"LE\",\n        scale: 1\n    };\n\n    // 3. Automatically map the meter objects to create the jobs array\n    jobs = meters.map(meter => {\n        return {\n            name: `${meter.name}_FlowMeter`,\n            unitid: meter.id,\n            meterName: meter.name,    // Added metadata\n            location: meter.location, // Added metadata\n            ...meterModelConfig\n        };\n    });\n\n    // Save to flow context so we only calculate this array once\n    flow.set(\"jobs\", jobs);\n}\n\n// Get the current index (default to 0 on first run)\nlet i = flow.get(\"job_index\") || 0;\nlet job = jobs[i];\n\nmsg.job = job;\n\n// Prepare payload for the Modbus Flex Getter node\nmsg.topic = job.name;\nmsg.payload = {\n    fc: job.fc,\n    unitid: job.unitid,\n    address: job.address,\n    quantity: job.quantity\n};\n\n// Increment index for the next inject interval, wrap around to 0 when reaching the end\nflow.set(\"job_index\", (i + 1) % jobs.length);\n\nreturn msg;",
+        "name": "Meter Info",
+        "func": "// Attempt to get existing jobs from the flow context\nlet jobs = flow.get(\"fm_jobs\");\n\n// If jobs don't exist yet, generate them dynamically\nif (!jobs) {\n    // 1. Define your list of meters with metadata (ID, name, location, etc.)\n    const meters = [\n        { id: 1, name: \"meter_1\", location: \"B5 Shed\" },\n        { id: 2, name: \"meter_2\", location: \"B5 Shed\" }\n    ]; \n    \n    // 2. Define the common register configuration for this specific meter model\n    const meterModelConfig = {\n        fc: 3,\n        address: 144,\n        quantity: 4,\n        dataType: \"float64\",\n        wordOrder: \"LE\",\n        scale: 1\n    };\n\n    // 3. Automatically map the meter objects to create the jobs array\n    jobs = meters.map(meter => {\n        return {\n            name: `${meter.name}_FlowMeter`,\n            unitid: meter.id,\n            meterName: meter.name,    // Added metadata\n            location: meter.location, // Added metadata\n            ...meterModelConfig\n        };\n    });\n\n    // Save to flow context so we only calculate this array once\n    flow.set(\"fm_jobs\", jobs);\n}\n\n// Get the current index (default to 0 on first run)\nlet i = flow.get(\"fm_job_index\") || 0;\nlet job = jobs[i];\n\nmsg.job = job;\n\n// Prepare payload for the Modbus Flex Getter node\nmsg.topic = job.name;\nmsg.payload = {\n    fc: job.fc,\n    unitid: job.unitid,\n    address: job.address,\n    quantity: job.quantity\n};\n\n// Increment index for the next inject interval, wrap around to 0 when reaching the end\nflow.set(\"fm_job_index\", (i + 1) % jobs.length);\n\nreturn msg;",
         "outputs": 1,
         "timeout": 0,
         "noerr": 0,
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 330,
+        "x": 280,
         "y": 60,
         "wires": [
             [
@@ -48,7 +48,7 @@
         "id": "16421a6efd3044cb",
         "type": "modbus-flex-getter",
         "z": "e6422d68233f1d2d",
-        "name": "",
+        "name": "Modbus Getter Moxa",
         "showStatusActivities": false,
         "showErrors": true,
         "showWarnings": true,
@@ -62,8 +62,8 @@
         "delayOnStart": false,
         "enableDeformedMessages": false,
         "startDelayTime": "",
-        "x": 310,
-        "y": 140,
+        "x": 380,
+        "y": 120,
         "wires": [
             [
                 "6a4aa8b228179937"
@@ -104,7 +104,7 @@
         "id": "6a4aa8b228179937",
         "type": "function",
         "z": "e6422d68233f1d2d",
-        "name": "function: DATA CONVERSION",
+        "name": "conversion",
         "func": "// timestamp formatter\nfunction getTimestamp() {\n    let now = new Date();\n    let yyyy = now.getFullYear();\n    let mm = String(now.getMonth() + 1).padStart(2, '0');\n    let dd = String(now.getDate()).padStart(2, '0');\n    let hh = String(now.getHours()).padStart(2, '0');\n    let min = String(now.getMinutes()).padStart(2, '0');\n    let ss = String(now.getSeconds()).padStart(2, '0');\n    return `${yyyy}-${mm}-${dd} ${hh}:${min}:${ss}`;\n}\n\nfunction swapWords16(arr) {\n    if (!Array.isArray(arr) || arr.length < 2) return arr;\n    let out = [];\n    for (let i = 0; i < arr.length; i += 2) {\n        if (i + 1 < arr.length) {\n            out.push(arr[i + 1], arr[i]);\n        } else {\n            out.push(arr[i]);\n        }\n    }\n    return out;\n}\n\nfunction regsToBuffer(regs) {\n    const buf = Buffer.alloc(regs.length * 2);\n    for (let i = 0; i < regs.length; i++) {\n        buf.writeUInt16BE(regs[i] & 0xFFFF, i * 2);\n    }\n    return buf;\n}\n\nfunction toBigInt64FromRegs(regs, wordOrder) {\n    let r = regs.slice();\n    if (wordOrder === \"LE\") r = swapWords16(r);\n\n    let value = 0n;\n    for (let i = 0; i < r.length; i++) {\n        value = (value << 16n) | BigInt(r[i] & 0xFFFF);\n    }\n    return value;\n}\n\n// get saved job\n//let job = flow.get(\"current_job\") || {};\nlet job = msg.job || {};\nlet regs = [];\n\nif (msg.payload && Array.isArray(msg.payload.data)) {\n    regs = msg.payload.data;\n} else if (Array.isArray(msg.payload)) {\n    regs = msg.payload;\n} else {\n    node.warn(\"No register array found in msg.payload.data\");\n    return null;\n}\n\nlet dataType = (job.dataType || \"\").toLowerCase();\nlet wordOrder = job.wordOrder || \"BE\";\nlet scale = Number(job.scale || 1);\nlet value = null;\n\ntry {\n    if (dataType === \"float32\") {\n        let r = regs.slice(0, 2);\n        if (wordOrder === \"LE\") r = swapWords16(r);\n        let buf = regsToBuffer(r);\n        value = buf.readFloatBE(0) * scale;\n\n    } else if (dataType === \"uint32\") {\n        let r = regs.slice(0, 2);\n        if (wordOrder === \"LE\") r = swapWords16(r);\n        let buf = regsToBuffer(r);\n        value = buf.readUInt32BE(0) * scale;\n\n    } else if (dataType === \"int32\") {\n        let r = regs.slice(0, 2);\n        if (wordOrder === \"LE\") r = swapWords16(r);\n        let buf = regsToBuffer(r);\n        value = buf.readInt32BE(0) * scale;\n\n    } else if (dataType === \"uint64\") {\n        let r = regs.slice(0, 4);\n        let bigVal = toBigInt64FromRegs(r, wordOrder);\n        value = Number(bigVal) * scale;\n\n    } else if (dataType === \"uint16\") {\n        value = (regs[0] || 0) * scale;\n\n    } else if (dataType === \"int16\") {\n        let v = regs[0] || 0;\n        if (v > 32767) v = v - 65536;\n        value = v * scale;\n\n    } else if (dataType === \"float64\") {\n        let r = regs.slice(0, 4);\n        let buf = Buffer.alloc(8);\n        buf.writeUInt16BE(r[3], 0);\n        buf.writeUInt16BE(r[2], 2);\n        buf.writeUInt16BE(r[1], 4);\n        buf.writeUInt16BE(r[0], 6);\n        value = buf.readDoubleBE(0) * scale;\n\n    } else {\n        value = regs;\n    }\n\n    msg.payload = {\n        meter_id: job.meterName || null,\n        location: job.location || null,\n        dataout: value,\n        timestamp: getTimestamp()\n    };\n\n    return msg;\n\n} catch (err) {\n    node.error(\"Conversion failed: \" + err.message, msg);\n    return null;\n}",
         "outputs": 1,
         "timeout": 0,
@@ -112,8 +112,8 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 570,
-        "y": 120,
+        "x": 490,
+        "y": 60,
         "wires": [
             [
                 "8c298c461ab0a81e"
@@ -151,7 +151,7 @@
         "showLogs": true
     },
     {
-        "id": "4377a9efc95c0b78",
+        "id": "79d924620fd57f49",
         "type": "global-config",
         "env": [],
         "modules": {
